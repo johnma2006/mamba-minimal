@@ -55,6 +55,7 @@ class Mamba(nn.Module):
         """Full Mamba model."""
         super().__init__()
         self.args = args
+        
         self.embedding = nn.Embedding(args.vocab_size, args.d_model)
         self.layers = nn.ModuleList([ResidualBlock(args) for _ in range(args.n_layer)])
         self.norm_f = RMSNorm(args.d_model)
@@ -69,7 +70,7 @@ class Mamba(nn.Module):
             input_ids (long tensor): shape (b, l)    (See Glossary at top for definitions of b, l, d_in, n...)
     
         Returns:
-            logits: shape (b, l, d)
+            logits: shape (b, l, vocab_size)
 
         Official Implementation:
             class MambaLMHeadModel, https://github.com/state-spaces/mamba/blob/main/mamba_ssm/models/mixer_seq_simple.py#L173
@@ -88,7 +89,7 @@ class Mamba(nn.Module):
     
     @staticmethod
     def from_pretrained(pretrained_model_name: str):
-        """Load model with pretrained weights.
+        """Load pretrained weights from HuggingFace into model.
     
         Args:
             pretrained_model_name: One of
@@ -152,8 +153,13 @@ class ResidualBlock(nn.Module):
 
         Official Implementation:
             Block.forward(), https://github.com/state-spaces/mamba/blob/main/mamba_ssm/modules/mamba_simple.py#L297
-            NOTE: the official repo does "Add -> Norm -> Mamba, returning both", purely for performance reasons as this
-            allows them to do fused add + norm. We revert back to "LN -> Mamba -> Add" as it is simpler.
+            
+            NOTE: the official repo chains residual blocks that look like
+                [Add -> Norm -> Mamba] -> [Add -> Norm -> Mamba] -> [Add -> Norm -> Mamba] -> ...
+            where the first Add is a no-op. This is purely for performance reasons as this allows them to fuse the Add->Norm.
+
+            We instead implement our residual blocks as more standard, simpler, and numerically equivalent
+                [Norm -> Mamba -> Add] -> [Norm -> Mamba -> Add] -> [Norm -> Mamba -> Add] -> ....
             
         """
         output = self.mixer(self.norm(x)) + x
@@ -202,6 +208,7 @@ class MambaBlock(nn.Module):
         
         Official Implementation:
             class Mamba, https://github.com/state-spaces/mamba/blob/main/mamba_ssm/modules/mamba_simple.py#L119
+            mamba_inner_ref(), https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/selective_scan_interface.py#L311
             
         """
         (b, l, d) = x.shape
