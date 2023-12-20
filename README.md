@@ -15,7 +15,7 @@ Does NOT include:
 See [demo.ipynb](demo.ipynb) for examples of prompt completions.
 
 ```python
-from model import Mamba, ModelArgs
+from model import Mamba
 from transformers import AutoTokenizer
 
 model = Mamba.from_pretrained('state-spaces/mamba-370m')
@@ -24,6 +24,8 @@ tokenizer = AutoTokenizer.from_pretrained('EleutherAI/gpt-neox-20b')
 generate(model, tokenizer, 'Mamba is the')
 ```
 > Mamba is the world's longest venomous snake with an estimated length of over 150 m. With such a large size and a venomous bite, Mamba kills by stabbing the victim (which is more painful and less effective than a single stab of the bite)
+
+150 meters... 🫢 scary!
 
 ## References
 
