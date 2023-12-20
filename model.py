@@ -233,7 +233,7 @@ class MambaBlock(nn.Module):
         """Runs the SSM. See:
             - Algorithm 2 in Section 3.2 in the Mamba paper [1]
             - run_SSM(A, B, C, u) in The Annotated S4 [2]
-    
+
         Args:
             x: shape (b, d_in, l)    (See Glossary at top for definitions of b, l, d_in, n...)
     
@@ -246,15 +246,18 @@ class MambaBlock(nn.Module):
         """
         (d_in, n) = self.A_log.shape
 
-        A = -torch.exp(self.A_log.float())  # shape (d_in, n)
+        # Compute ∆ A B C D, the state space parameters.
+        #     A, D are input independent
+        #     ∆, B, C are input-dependent (this is a key difference between Mamba and the linear time invariant S4)
 
-        # As opposed to S4 which have time invariant A B C, in Mamba we let ∆ B C be functions of the input
+        A = -torch.exp(self.A_log.float())  # shape (d_in, n)
+        D = self.D.float()
+
         x_dbl = rearrange(x, 'b d l -> b l d')
         x_dbl = self.x_proj(x_dbl)  # (b, l, dt_rank + 2*n)
         
         (delta, B, C) = x_dbl.split(split_size=[self.args.dt_rank, n, n], dim=-1)  # delta: (b, l, dt_rank). B, C: (b, l, n)
         delta = F.softplus(self.dt_proj(delta))  # (b, l, d_in)
-        D = self.D.float()
         
         y = self.selective_scan(x, delta, A, B, C, D)  # This is similar to run_SSM(A, B, C, u) in The Annotated S4 [2]
         
@@ -263,8 +266,14 @@ class MambaBlock(nn.Module):
     
     def selective_scan(self, u, delta, A, B, C, D):
         """Does selective scan algorithm. See:
+            - Section 2 State Space Models in the Mamba paper [1]
             - Algorithm 2 in Section 3.2 in the Mamba paper [1]
             - run_SSM(A, B, C, u) in The Annotated S4 [2]
+
+        This is the classic discrete state space formula:
+            x(t + 1) = Ax(t) + Bu(t)
+            y(t)     = Cx(t) + Du(t)
+        except B and C (and the step size delta, which is used for discretization) are dependent on the input x(t).
     
         Args:
             u: shape (b, d_in, l)    (See Glossary at top for definitions of b, l, d_in, n...)
