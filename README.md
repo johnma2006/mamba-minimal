@@ -15,7 +15,7 @@ Does NOT include:
 See [demo.ipynb](demo.ipynb) for examples of prompt completions.
 
 ```python
-from model import Mamba, ModelArgs
+from model import Mamba
 from transformers import AutoTokenizer
 
 model = Mamba.from_pretrained('state-spaces/mamba-370m')
