@@ -3,13 +3,6 @@
 Suggest reading the following before/while reading the code:
     [1] Mamba: Linear-Time Sequence Modeling with Selective State Spaces (Albert Gu and Tri Dao)
         https://arxiv.org/abs/2312.00752
-
-        In particular,
-            Sections 3.1 and 3.2 gives intuitive motivation behind the development of "selection",
-                the key architectural innovation in Mamba (selection basically means that B, C
-                are input-dependent instead of time-invariant as in S4)
-            Section 3.5.2 give intuition behind various state space parameters Δ, A, B, C, and of selection
-    
     [2] The Annotated S4 (Sasha Rush and Sidd Karamcheti)
         https://srush.github.io/annotated-s4
 
