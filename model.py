@@ -1,20 +1,30 @@
 """Simple, minimal implementation of Mamba in one file of PyTorch.
 
 Suggest reading the following before/while reading the code:
-    [1] Mamba: Linear-Time Sequence Modeling with Selective State Spaces (Albert Gu and Tri Dao): https://arxiv.org/abs/2312.00752
-    [2] The Annotated S4 (Sasha Rush and Sidd Karamcheti): https://srush.github.io/annotated-s4
+    [1] Mamba: Linear-Time Sequence Modeling with Selective State Spaces (Albert Gu and Tri Dao)
+        https://arxiv.org/abs/2312.00752
 
-References:
-    * Official Mamba implementation: https://github.com/state-spaces/mamba/tree/main
+        In particular,
+            Sections 3.1 and 3.2 gives intuitive motivation behind the development of "selection",
+                the key architectural innovation in Mamba (selection basically means that B, C
+                are input-dependent instead of time-invariant as in S4)
+            Section 3.5.2 give intuition behind various state space parameters Δ, A, B, C, and of selection
+    
+    [2] The Annotated S4 (Sasha Rush and Sidd Karamcheti)
+        https://srush.github.io/annotated-s4
+
 
 Glossary:
-    b: batch size
-    l: sequence length
+    b: batch size                       (`B` in Mamba paper [1] Algorithm 2)
+    l: sequence length                  (`L` in [1] Algorithm 2)
     d (AKA d_model): hidden dim
-    n (AKA d_state): latent state dim (this is `N` in Mamba paper [1] Algorithm 2)
-    expand: expansion factor (see Mamba paper [1] Section 3.4)
-    d_in (AKA d_inner): d * expand
-    dt_rank: rank of delta Δ (see Mamba paper [1] Section 3.6 "Parameterization of ∆")
+    n (AKA d_state): latent state dim   (`N` in [1] Algorithm 2)
+    expand: expansion factor            (See Mamba paper [1] Section 3.4)
+    d_in (AKA d_inner): d * expand      (`D` in [1] Algorithm 2)
+    A, B, C, D: state space parameters  (See any state space representation formula)
+                                        (B, C are input-dependent; A, D are not)
+    Δ (AKA delta): input-dependent step size
+    dt_rank: rank of Δ                  (See [1] Section 3.6 "Parameterization of ∆")
 
 """
 from __future__ import annotations
@@ -47,7 +57,8 @@ class ModelArgs:
             self.dt_rank = math.ceil(self.d_model / 16)
             
         if self.vocab_size % self.pad_vocab_size_multiple != 0:
-            self.vocab_size += self.pad_vocab_size_multiple - self.vocab_size % self.pad_vocab_size_multiple
+            self.vocab_size += (self.pad_vocab_size_multiple
+                                - self.vocab_size % self.pad_vocab_size_multiple)
 
 
 class Mamba(nn.Module):
@@ -61,7 +72,8 @@ class Mamba(nn.Module):
         self.norm_f = RMSNorm(args.d_model)
 
         self.lm_head = nn.Linear(args.d_model, args.vocab_size, bias=False)
-        self.lm_head.weight = self.embedding.weight  # Tie output projection to embedding weights. See "Weight Tying" paper
+        self.lm_head.weight = self.embedding.weight  # Tie output projection to embedding weights.
+                                                     # See "Weight Tying" paper
 
 
     def forward(self, input_ids):
@@ -108,12 +120,14 @@ class Mamba(nn.Module):
         from transformers.utils.hub import cached_file
         
         def load_config_hf(model_name):
-            resolved_archive_file = cached_file(model_name, CONFIG_NAME, _raise_exceptions_for_missing_entries=False)
+            resolved_archive_file = cached_file(model_name, CONFIG_NAME,
+                                                _raise_exceptions_for_missing_entries=False)
             return json.load(open(resolved_archive_file))
         
         
         def load_state_dict_hf(model_name, device=None, dtype=None):
-            resolved_archive_file = cached_file(model_name, WEIGHTS_NAME, _raise_exceptions_for_missing_entries=False)
+            resolved_archive_file = cached_file(model_name, WEIGHTS_NAME,
+                                                _raise_exceptions_for_missing_entries=False)
             return torch.load(resolved_archive_file, weights_only=True)
         
         config_data = load_config_hf(pretrained_model_name)
@@ -156,9 +170,10 @@ class ResidualBlock(nn.Module):
             
             NOTE: the official repo chains residual blocks that look like
                 [Add -> Norm -> Mamba] -> [Add -> Norm -> Mamba] -> [Add -> Norm -> Mamba] -> ...
-            where the first Add is a no-op. This is purely for performance reasons as this allows them to fuse the Add->Norm.
+            where the first Add is a no-op. This is purely for performance reasons as this
+            allows them to fuse the Add->Norm.
 
-            We instead implement our residual blocks as more standard, simpler, and numerically equivalent
+            We instead implement our blocks as the more familiar, simpler, and numerically equivalent
                 [Norm -> Mamba -> Add] -> [Norm -> Mamba -> Add] -> [Norm -> Mamba -> Add] -> ....
             
         """
@@ -247,9 +262,10 @@ class MambaBlock(nn.Module):
         (d_in, n) = self.A_log.shape
 
         # Compute ∆ A B C D, the state space parameters.
-        #     A, D are input independent
-        #     ∆, B, C are input-dependent (this is a key difference between Mamba and the linear time invariant S4)
-
+        #     A, D are input independent (see Mamba paper [1] Section 3.5.2 "Interpretation of A" for why A isn't selective)
+        #     ∆, B, C are input-dependent (this is a key difference between Mamba and the linear time invariant S4,
+        #                                  and is why Mamba is called **selective** state spaces)
+        
         A = -torch.exp(self.A_log.float())  # shape (d_in, n)
         D = self.D.float()
 
@@ -294,8 +310,8 @@ class MambaBlock(nn.Module):
         (b, d_in, l) = u.shape
         n = A.shape[1]
         
-        # Discretize continuous parameters (Δ, A, B)  (see Section 2 Equation 4 in the Mamba paper [1])
-        # Note that B is parameterized directly
+        # Discretize continuous parameters (Δ, A, B) using zero-order hold (ZOH) discretization
+        # See Section 2 Equation 4 in the Mamba paper [1]
         deltaA = torch.exp(einsum(delta, A, 'b l d_in, d_in n -> b d_in l n'))
         deltaB_u = einsum(delta, B, u, 'b l d_in, b l n, b d_in l -> b d_in l n')
         
@@ -304,7 +320,7 @@ class MambaBlock(nn.Module):
         ys = []    
         for i in range(l):
             x = deltaA[:, :, i] * x + deltaB_u[:, :, i]
-            y = einsum(x, C[:, i, :], 'b d_in n , b n -> b d_in')
+            y = einsum(x, C[:, i, :], 'b d_in n, b n -> b d_in')
             ys.append(y)
         y = torch.stack(ys, dim=2) # (b d_in l)
         
