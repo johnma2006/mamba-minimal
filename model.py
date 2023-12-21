@@ -310,7 +310,7 @@ class MambaBlock(nn.Module):
         deltaB_u = einsum(delta, B, u, 'b l d_in, b l n, b l d_in -> b d_in l n')
         
         # Perform selective scan (see scan_SSM() in The Annotated S4 [2])
-        x = torch.zeros((b, d_in, n))
+        x = torch.zeros((b, d_in, n), device=deltaA.device)
         ys = []    
         for i in range(l):
             x = deltaA[:, :, i] * x + deltaB_u[:, :, i]
