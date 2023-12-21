@@ -6,7 +6,6 @@ Suggest reading the following before/while reading the code:
     [2] The Annotated S4 (Sasha Rush and Sidd Karamcheti)
         https://srush.github.io/annotated-s4
 
-
 Glossary:
     b: batch size                       (`B` in Mamba paper [1] Algorithm 2)
     l: sequence length                  (`L` in [1] Algorithm 2)
@@ -161,7 +160,7 @@ class ResidualBlock(nn.Module):
         Official Implementation:
             Block.forward(), https://github.com/state-spaces/mamba/blob/main/mamba_ssm/modules/mamba_simple.py#L297
             
-            NOTE: the official repo chains residual blocks that look like
+            Note: the official repo chains residual blocks that look like
                 [Add -> Norm -> Mamba] -> [Add -> Norm -> Mamba] -> [Add -> Norm -> Mamba] -> ...
             where the first Add is a no-op. This is purely for performance reasons as this
             allows them to fuse the Add->Norm.
@@ -212,7 +211,6 @@ class MambaBlock(nn.Module):
     
         Returns:
             output: shape (b, l, d)
-
         
         Official Implementation:
             class Mamba, https://github.com/state-spaces/mamba/blob/main/mamba_ssm/modules/mamba_simple.py#L119
@@ -222,17 +220,19 @@ class MambaBlock(nn.Module):
         (b, l, d) = x.shape
         
         x_and_res = self.in_proj(x)  # shape (b, l, 2 * d_in)
-        x_and_res = rearrange(x_and_res, 'b l x -> b x l')
-        (x, res) = x_and_res.split(split_size=[self.args.d_inner, self.args.d_inner], dim=1)
-        
+        (x, res) = x_and_res.split(split_size=[self.args.d_inner, self.args.d_inner], dim=-1)
+
+        x = rearrange(x, 'b l d_in -> b d_in l')
         x = self.conv1d(x)[:, :, :l]
+        x = rearrange(x, 'b d_in l -> b l d_in')
+        
         x = F.silu(x)
 
         y = self.ssm(x)
         
         y = y * F.silu(res)
         
-        output = self.out_proj(rearrange(y, 'b d_model l -> b l d_model'))
+        output = self.out_proj(y)
 
         return output
 
@@ -243,10 +243,10 @@ class MambaBlock(nn.Module):
             - run_SSM(A, B, C, u) in The Annotated S4 [2]
 
         Args:
-            x: shape (b, d_in, l)    (See Glossary at top for definitions of b, l, d_in, n...)
+            x: shape (b, l, d_in)    (See Glossary at top for definitions of b, l, d_in, n...)
     
         Returns:
-            output: shape (b, d_in, l)
+            output: shape (b, l, d_in)
 
         Official Implementation:
             mamba_inner_ref(), https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/selective_scan_interface.py#L311
@@ -262,8 +262,7 @@ class MambaBlock(nn.Module):
         A = -torch.exp(self.A_log.float())  # shape (d_in, n)
         D = self.D.float()
 
-        x_dbl = rearrange(x, 'b d l -> b l d')
-        x_dbl = self.x_proj(x_dbl)  # (b, l, dt_rank + 2*n)
+        x_dbl = self.x_proj(x)  # (b, l, dt_rank + 2*n)
         
         (delta, B, C) = x_dbl.split(split_size=[self.args.dt_rank, n, n], dim=-1)  # delta: (b, l, dt_rank). B, C: (b, l, n)
         delta = F.softplus(self.dt_proj(delta))  # (b, l, d_in)
@@ -285,7 +284,7 @@ class MambaBlock(nn.Module):
         except B and C (and the step size delta, which is used for discretization) are dependent on the input x(t).
     
         Args:
-            u: shape (b, d_in, l)    (See Glossary at top for definitions of b, l, d_in, n...)
+            u: shape (b, l, d_in)    (See Glossary at top for definitions of b, l, d_in, n...)
             delta: shape (b, l, d_in)
             A: shape (d_in, n)
             B: shape (b, l, n)
@@ -293,20 +292,20 @@ class MambaBlock(nn.Module):
             D: shape (d_in,)
     
         Returns:
-            output: shape (b, d_in, l)
+            output: shape (b, l, d_in)
     
         Official Implementation:
             selective_scan_ref(), https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/selective_scan_interface.py#L86
             Note: I refactored some parts out of `selective_scan_ref` out, so the functionality doesn't match exactly.
             
         """
-        (b, d_in, l) = u.shape
+        (b, l, d_in) = u.shape
         n = A.shape[1]
         
         # Discretize continuous parameters (Δ, A, B) using zero-order hold (ZOH) discretization
         # See Section 2 Equation 4 in the Mamba paper [1]
         deltaA = torch.exp(einsum(delta, A, 'b l d_in, d_in n -> b d_in l n'))
-        deltaB_u = einsum(delta, B, u, 'b l d_in, b l n, b d_in l -> b d_in l n')
+        deltaB_u = einsum(delta, B, u, 'b l d_in, b l n, b l d_in -> b d_in l n')
         
         # Perform selective scan (see scan_SSM() in The Annotated S4 [2])
         x = torch.zeros((b, d_in, n))
@@ -315,10 +314,9 @@ class MambaBlock(nn.Module):
             x = deltaA[:, :, i] * x + deltaB_u[:, :, i]
             y = einsum(x, C[:, i, :], 'b d_in n, b n -> b d_in')
             ys.append(y)
-        y = torch.stack(ys, dim=2) # (b d_in l)
+        y = torch.stack(ys, dim=1)  # (b, l, d_in)
         
-        if D is not None:
-            y = y + u * rearrange(D, 'd_in -> d_in 1')
+        y = y + u * D
     
         return y
 
