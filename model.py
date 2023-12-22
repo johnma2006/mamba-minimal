@@ -305,7 +305,7 @@ class MambaBlock(nn.Module):
         # Discretize continuous parameters (A, B)
         # - A is discretized using zero-order hold (ZOH) discretization (see Section 2 Equation 4 in the Mamba paper [1])
         # - B is discretized using a simplified Euler discretization instead of ZOH. From a discussion with authors:
-        #   "A is the more important term and the performance doesn't change much with the simplication on B"
+        #   "A is the more important term and the performance doesn't change much with the simplification on B"
         deltaA = torch.exp(einsum(delta, A, 'b l d_in, d_in n -> b d_in l n'))
         deltaB_u = einsum(delta, B, u, 'b l d_in, b l n, b l d_in -> b d_in l n')
         
