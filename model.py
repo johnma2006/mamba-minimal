@@ -120,7 +120,7 @@ class Mamba(nn.Module):
         def load_state_dict_hf(model_name, device=None, dtype=None):
             resolved_archive_file = cached_file(model_name, WEIGHTS_NAME,
                                                 _raise_exceptions_for_missing_entries=False)
-            return torch.load(resolved_archive_file, weights_only=True)
+            return torch.load(resolved_archive_file, weights_only=True, map_location='cpu', mmap=True)
         
         config_data = load_config_hf(pretrained_model_name)
         args = ModelArgs(
