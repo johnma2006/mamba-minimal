@@ -306,14 +306,14 @@ class MambaBlock(nn.Module):
         # - A is discretized using zero-order hold (ZOH) discretization (see Section 2 Equation 4 in the Mamba paper [1])
         # - B is discretized using a simplified Euler discretization instead of ZOH. From a discussion with authors:
         #   "A is the more important term and the performance doesn't change much with the simplification on B"
-        deltaA = torch.exp(einsum(delta, A, 'b l d_in, d_in n -> b d_in l n'))
-        deltaB_u = einsum(delta, B, u, 'b l d_in, b l n, b l d_in -> b d_in l n')
+        deltaA = torch.exp(einsum(delta, A, 'b l d_in, d_in n -> b l d_in n'))
+        deltaB_u = einsum(delta, B, u, 'b l d_in, b l n, b l d_in -> b l d_in n')
         
         # Perform selective scan (see scan_SSM() in The Annotated S4 [2])
         x = torch.zeros((b, d_in, n), device=deltaA.device)
         ys = []    
         for i in range(l):
-            x = deltaA[:, :, i] * x + deltaB_u[:, :, i]
+            x = deltaA[:, i] * x + deltaB_u[:, i]
             y = einsum(x, C[:, i, :], 'b d_in n, b n -> b d_in')
             ys.append(y)
         y = torch.stack(ys, dim=1)  # shape (b, l, d_in)
