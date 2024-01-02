@@ -27,6 +27,16 @@ generate(model, tokenizer, 'Mamba is the')
 
 150 meters... 🫢 scary!
 
+### Demo Setup
+You can run the following to install all the packages required:
+```
+conda create -n mamba-minimal
+conda activate mamba-minimal
+conda install pytorch::pytorch torchvision torchaudio -c pytorch
+conda install ipykernel
+pip install transformers einops
+```
+
 ## References
 
 The Mamba architecture was introduced in [Mamba: Linear-Time Sequence Modeling with Selective State Spaces](https://arxiv.org/abs/2312.00752) by [Albert Gu](https://twitter.com/_albertgu?lang=en) and [Tri Dao](https://twitter.com/tri_dao?ref_src=twsrc%5Egoogle%7Ctwcamp%5Eserp%7Ctwgr%5Eauthor).
