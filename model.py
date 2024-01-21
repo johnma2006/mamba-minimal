@@ -310,6 +310,8 @@ class MambaBlock(nn.Module):
         deltaB_u = einsum(delta, B, u, 'b l d_in, b l n, b l d_in -> b l d_in n')
         
         # Perform selective scan (see scan_SSM() in The Annotated S4 [2])
+        # Note that the below is sequential, while the official implementation does a much faster parallel scan that
+        # is additionally hardware-aware (like FlashAttention).
         x = torch.zeros((b, d_in, n), device=deltaA.device)
         ys = []    
         for i in range(l):
