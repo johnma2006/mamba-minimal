@@ -191,15 +191,8 @@ class MambaBlock(nn.Module):
             padding=args.d_conv - 1,
         )
 
-        # x_proj takes in `x` and outputs the input-specific Δ, B, C
-        self.x_proj = nn.Linear(args.d_inner, args.dt_rank + args.d_state * 2, bias=False)
-        
-        # dt_proj projects Δ from dt_rank to d_in
-        self.dt_proj = nn.Linear(args.dt_rank, args.d_inner, bias=True)
+        self.ssm = SSM(args)
 
-        A = repeat(torch.arange(1, args.d_state + 1), 'n -> d n', d=args.d_inner)
-        self.A_log = nn.Parameter(torch.log(A))
-        self.D = nn.Parameter(torch.ones(args.d_inner))
         self.out_proj = nn.Linear(args.d_inner, args.d_model, bias=args.bias)
         
 
@@ -236,8 +229,25 @@ class MambaBlock(nn.Module):
 
         return output
 
-    
-    def ssm(self, x):
+
+class SSM(nn.Module):
+    def __init__(self, args: ModelArgs):
+        """Runs the SSM."""
+        super().__init__()
+        self.args = args
+
+        # x_proj takes in `x` and outputs the input-specific Δ, B, C
+        self.x_proj = nn.Linear(args.d_inner, args.dt_rank + args.d_state * 2, bias=False)
+        
+        # dt_proj projects Δ from dt_rank to d_in
+        self.dt_proj = nn.Linear(args.dt_rank, args.d_inner, bias=True)
+
+        A = repeat(torch.arange(1, args.d_state + 1), 'n -> d n', d=args.d_inner)
+        self.A_log = nn.Parameter(torch.log(A))
+        self.D = nn.Parameter(torch.ones(args.d_inner))
+
+
+    def forward(self, x):
         """Runs the SSM. See:
             - Algorithm 2 in Section 3.2 in the Mamba paper [1]
             - run_SSM(A, B, C, u) in The Annotated S4 [2]
@@ -271,7 +281,7 @@ class MambaBlock(nn.Module):
         
         return y
 
-    
+
     def selective_scan(self, u, delta, A, B, C, D):
         """Does selective scan algorithm. See:
             - Section 2 State Space Models in the Mamba paper [1]
@@ -321,7 +331,7 @@ class MambaBlock(nn.Module):
         y = torch.stack(ys, dim=1)  # shape (b, l, d_in)
         
         y = y + u * D
-    
+        
         return y
 
 
